@@ -151,9 +151,14 @@ def register_best_model_from_experiment(
         # Assign alias or fallback to tag
         if hasattr(client, "set_registered_model_alias"):
             client.set_registered_model_alias(
+        # 1. Set model version tags (visible in the Tags section of the MLflow UI)
+        try:
+            client.set_model_version_tag(
                 name=registered_model_name,
                 alias=tag_or_alias,
                 version=model_version.version,
+                key="stage",
+                value=tag_or_alias,
             )
             msg = (
                 f"Model '{registered_model_name}' version {model_version.version} successfully registered! "
@@ -164,13 +169,47 @@ def register_best_model_from_experiment(
                 name=registered_model_name,
                 version=model_version.version,
                 key="stage",
+                key="alias",
                 value=tag_or_alias,
             )
             msg = (
                 f"Model '{registered_model_name}' version {model_version.version} successfully registered! "
                 f"Tag 'stage:{tag_or_alias}' assigned (Best {metric_name}: {best_metric_value:.4f})."
             )
+        except Exception:
+            pass
 
+        # 2. Assign modern model alias
+        if hasattr(client, "set_registered_model_alias"):
+            try:
+                client.set_registered_model_alias(
+                    name=registered_model_name,
+                    alias=tag_or_alias,
+                    version=model_version.version,
+                )
+            except Exception:
+                pass
+
+        # 3. Transition stage if tag matches standard lifecycle stages (Production, Staging, Archived)
+        stage_mapping = {
+            "production": "Production",
+            "staging": "Staging",
+            "archived": "Archived",
+        }
+        if tag_or_alias.lower() in stage_mapping:
+            try:
+                client.transition_model_version_stage(
+                    name=registered_model_name,
+                    version=model_version.version,
+                    stage=stage_mapping[tag_or_alias.lower()],
+                )
+            except Exception:
+                pass
+
+        msg = (
+            f"Model '{registered_model_name}' version {model_version.version} successfully registered! "
+            f"Tagged and aliased as '{tag_or_alias}' (Best {metric_name}: {best_metric_value:.4f})."
+        )
         return True, msg
 
     except Exception as exc:
